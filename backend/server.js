@@ -24,7 +24,7 @@ if (!fs.existsSync(publicDir)) {
 // Texture generation utility
 class TextureGenerator {
   constructor() {
-    // Initialize with Jimp instead of Canvas
+    // Initialize with Jimp
   }
 
   // Generate procedural texture based on prompt
@@ -42,13 +42,27 @@ class TextureGenerator {
       return await image.getBufferAsync(Jimp.MIME_PNG);
     } catch (error) {
       console.error('Error generating texture:', error);
-      return this.generateFallbackTexture(width, height);
+      return await this.generateFallbackTexture(width, height);
     }
   }
 
   async analyzePromptWithOllama(prompt) {
     try {
       console.log(`Connecting to Ollama at ${OLLAMA_URL}`);
+      
+      // First check if Ollama is available
+      const healthResponse = await axios.get(`${OLLAMA_URL}/api/tags`, {
+        timeout: 5000,
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!healthResponse.data || !healthResponse.data.models) {
+        throw new Error('Ollama is running but no models available');
+      }
+
+      console.log('Ollama is available, making generation request...');
       
       const response = await axios.post(`${OLLAMA_URL}/api/generate`, {
         model: 'llama3.2',
@@ -65,7 +79,7 @@ class TextureGenerator {
         Example: {"colors":["#8B4513","#D2691E","#F4A460"],"pattern":"organic","roughness":0.7,"contrast":0.6,"type":"wood"}`,
         stream: false
       }, {
-        timeout: 10000, // 10 second timeout
+        timeout: 30000, // 30 second timeout for generation
         headers: {
           'Content-Type': 'application/json'
         }
@@ -86,9 +100,12 @@ class TextureGenerator {
       }
     } catch (error) {
       if (error.code === 'ECONNREFUSED') {
-        console.log('Ollama connection refused - make sure Ollama is running on port 11434');
+        console.log('Ollama connection refused - Ollama is not running on port 11434');
       } else if (error.code === 'ETIMEDOUT') {
         console.log('Ollama request timed out');
+      } else if (error.response && error.response.status === 404) {
+        console.log('Ollama API endpoint not found - check if llama3.2 model is installed');
+        console.log('Run: ollama pull llama3.2');
       } else {
         console.log('Ollama error:', error.message);
       }
@@ -110,7 +127,7 @@ class TextureGenerator {
         contrast: 0.6,
         type: 'wood'
       };
-    } else if (lowerPrompt.includes('stone') || lowerPrompt.includes('rock')) {
+    } else if (lowerPrompt.includes('stone') || lowerPrompt.includes('rock') || lowerPrompt.includes('wall')) {
       return {
         colors: ['#696969', '#A9A9A9', '#808080', '#D3D3D3'],
         pattern: 'noise',
@@ -312,7 +329,7 @@ class TextureGenerator {
     return Jimp.rgbaToInt(r, g, b, 255);
   }
 
-  generateFallbackTexture(width, height) {
+  async generateFallbackTexture(width, height) {
     const image = new Jimp(width, height, 0x000000FF);
     
     // Simple checkerboard pattern as fallback
@@ -329,7 +346,7 @@ class TextureGenerator {
       }
     }
     
-    return image.getBufferAsync(Jimp.MIME_PNG);
+    return await image.getBufferAsync(Jimp.MIME_PNG);
   }
 }
 
@@ -410,18 +427,29 @@ app.get('/api/download/:filename', (req, res) => {
 // Test Ollama connection
 app.get('/api/ollama-status', async (req, res) => {
   try {
-    const response = await axios.get(`${OLLAMA_URL}/api/tags`);
+    const response = await axios.get(`${OLLAMA_URL}/api/tags`, {
+      timeout: 5000
+    });
     res.json({ 
       status: 'connected', 
       models: response.data.models || [],
       url: OLLAMA_URL 
     });
   } catch (error) {
+    let status = 'disconnected';
+    let note = 'Ollama is not running or not accessible';
+    
+    if (error.code === 'ECONNREFUSED') {
+      note = 'Ollama is not running. Start it with: ollama serve';
+    } else if (error.response && error.response.status === 404) {
+      note = 'Ollama is running but API endpoint not found';
+    }
+    
     res.json({ 
-      status: 'disconnected', 
+      status,
       error: error.message,
       url: OLLAMA_URL,
-      note: 'Make sure Ollama is running locally'
+      note
     });
   }
 });
@@ -457,4 +485,17 @@ app.listen(PORT, () => {
   console.log(`Texture Generator Backend running on port ${PORT}`);
   console.log(`Ollama URL: ${OLLAMA_URL}`);
   console.log(`Health check: http://localhost:${PORT}/health`);
+  
+  // Check Ollama status on startup
+  axios.get(`${OLLAMA_URL}/api/tags`, { timeout: 3000 })
+    .then(() => {
+      console.log('✅ Ollama is connected and ready');
+    })
+    .catch(() => {
+      console.log('⚠️  Ollama not available - using fallback texture generation');
+      console.log('   To enable AI features, install and start Ollama:');
+      console.log('   1. Download from https://ollama.ai');
+      console.log('   2. Run: ollama pull llama3.2');
+      console.log('   3. Ollama should start automatically');
+    });
 });
