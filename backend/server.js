@@ -2,7 +2,6 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
-const sharp = require('sharp');
 const Jimp = require('jimp');
 const path = require('path');
 const fs = require('fs');
@@ -29,26 +28,28 @@ class TextureGenerator {
   }
 
   // Generate procedural texture based on prompt
-  async generateTexture(prompt, size = 32) {
+  async generateTexture(prompt, width = 32, height = 32) {
     try {
       // Use Ollama to analyze the prompt and generate texture parameters
       const textureParams = await this.analyzePromptWithOllama(prompt);
       
       // Create image with Jimp
-      const image = new Jimp(size, size, 0x00000000);
+      const image = new Jimp(width, height, 0x00000000);
       
       // Generate texture based on analyzed parameters
-      this.drawTexture(image, textureParams, size);
+      this.drawTexture(image, textureParams, width, height);
       
       return await image.getBufferAsync(Jimp.MIME_PNG);
     } catch (error) {
       console.error('Error generating texture:', error);
-      return this.generateFallbackTexture(size);
+      return this.generateFallbackTexture(width, height);
     }
   }
 
   async analyzePromptWithOllama(prompt) {
     try {
+      console.log(`Connecting to Ollama at ${OLLAMA_URL}`);
+      
       const response = await axios.post(`${OLLAMA_URL}/api/generate`, {
         model: 'llama3.2',
         prompt: `Analyze this texture description and provide texture generation parameters in JSON format. 
@@ -63,23 +64,38 @@ class TextureGenerator {
         
         Example: {"colors":["#8B4513","#D2691E","#F4A460"],"pattern":"organic","roughness":0.7,"contrast":0.6,"type":"wood"}`,
         stream: false
+      }, {
+        timeout: 10000, // 10 second timeout
+        headers: {
+          'Content-Type': 'application/json'
+        }
       });
 
+      console.log('Ollama response received');
+      
       if (response.data && response.data.response) {
         try {
           const jsonMatch = response.data.response.match(/\{.*\}/);
           if (jsonMatch) {
+            console.log('Successfully parsed Ollama response');
             return JSON.parse(jsonMatch[0]);
           }
         } catch (parseError) {
-          console.log('Error parsing Ollama response, using defaults');
+          console.log('Error parsing Ollama response, using defaults:', parseError.message);
         }
       }
     } catch (error) {
-      console.log('Ollama not available, using defaults:', error.message);
+      if (error.code === 'ECONNREFUSED') {
+        console.log('Ollama connection refused - make sure Ollama is running on port 11434');
+      } else if (error.code === 'ETIMEDOUT') {
+        console.log('Ollama request timed out');
+      } else {
+        console.log('Ollama error:', error.message);
+      }
     }
 
     // Default parameters if Ollama is not available
+    console.log('Using default texture parameters');
     return this.getDefaultTextureParams(prompt);
   }
 
@@ -129,43 +145,43 @@ class TextureGenerator {
     }
   }
 
-  drawTexture(image, params, size) {
+  drawTexture(image, params, width, height) {
     const { colors, pattern, roughness, contrast } = params;
     
     // Fill base color
     const baseColor = this.hexToInt(colors[0]);
-    for (let x = 0; x < size; x++) {
-      for (let y = 0; y < size; y++) {
+    for (let x = 0; x < width; x++) {
+      for (let y = 0; y < height; y++) {
         image.setPixelColor(baseColor, x, y);
       }
     }
 
     switch (pattern) {
       case 'noise':
-        this.drawNoisePattern(image, colors, size, roughness);
+        this.drawNoisePattern(image, colors, width, height, roughness);
         break;
       case 'grid':
-        this.drawGridPattern(image, colors, size);
+        this.drawGridPattern(image, colors, width, height);
         break;
       case 'organic':
-        this.drawOrganicPattern(image, colors, size, roughness);
+        this.drawOrganicPattern(image, colors, width, height, roughness);
         break;
       case 'geometric':
-        this.drawGeometricPattern(image, colors, size);
+        this.drawGeometricPattern(image, colors, width, height);
         break;
       default:
-        this.drawRandomPattern(image, colors, size, roughness);
+        this.drawRandomPattern(image, colors, width, height, roughness);
     }
 
     // Apply contrast adjustment
     if (contrast !== 0.5) {
-      this.adjustContrast(image, size, contrast);
+      this.adjustContrast(image, width, height, contrast);
     }
   }
 
-  drawNoisePattern(image, colors, size, roughness) {
-    for (let x = 0; x < size; x++) {
-      for (let y = 0; y < size; y++) {
+  drawNoisePattern(image, colors, width, height, roughness) {
+    for (let x = 0; x < width; x++) {
+      for (let y = 0; y < height; y++) {
         if (Math.random() < roughness) {
           const colorIndex = Math.floor(Math.random() * colors.length);
           const color = this.hexToInt(colors[colorIndex]);
@@ -185,16 +201,16 @@ class TextureGenerator {
     }
   }
 
-  drawGridPattern(image, colors, size) {
-    const gridSize = Math.max(2, Math.floor(size / 8));
+  drawGridPattern(image, colors, width, height) {
+    const gridSize = Math.max(2, Math.floor(Math.min(width, height) / 8));
     
-    for (let x = 0; x < size; x += gridSize) {
-      for (let y = 0; y < size; y += gridSize) {
+    for (let x = 0; x < width; x += gridSize) {
+      for (let y = 0; y < height; y += gridSize) {
         const colorIndex = ((Math.floor(x / gridSize)) + (Math.floor(y / gridSize))) % colors.length;
         const color = this.hexToInt(colors[colorIndex]);
         
-        for (let dx = 0; dx < gridSize && x + dx < size; dx++) {
-          for (let dy = 0; dy < gridSize && y + dy < size; dy++) {
+        for (let dx = 0; dx < gridSize && x + dx < width; dx++) {
+          for (let dy = 0; dy < gridSize && y + dy < height; dy++) {
             image.setPixelColor(color, x + dx, y + dy);
           }
         }
@@ -202,18 +218,18 @@ class TextureGenerator {
     }
   }
 
-  drawOrganicPattern(image, colors, size, roughness) {
+  drawOrganicPattern(image, colors, width, height, roughness) {
     // Create organic blob patterns using circles
     const numBlobs = Math.floor(colors.length * 3);
     
     for (let i = 0; i < numBlobs; i++) {
-      const centerX = Math.random() * size;
-      const centerY = Math.random() * size;
-      const radius = (Math.random() * size / 4) + (size / 8);
+      const centerX = Math.random() * width;
+      const centerY = Math.random() * height;
+      const radius = (Math.random() * Math.min(width, height) / 4) + (Math.min(width, height) / 8);
       const color = this.hexToInt(colors[Math.floor(Math.random() * colors.length)]);
       
-      for (let x = 0; x < size; x++) {
-        for (let y = 0; y < size; y++) {
+      for (let x = 0; x < width; x++) {
+        for (let y = 0; y < height; y++) {
           const distance = Math.sqrt((x - centerX) ** 2 + (y - centerY) ** 2);
           if (distance < radius) {
             const alpha = Math.max(0, 1 - (distance / radius));
@@ -226,32 +242,32 @@ class TextureGenerator {
     }
   }
 
-  drawGeometricPattern(image, colors, size) {
-    const shapes = Math.floor(size / 4);
+  drawGeometricPattern(image, colors, width, height) {
+    const shapes = Math.floor(Math.min(width, height) / 4);
     
     for (let i = 0; i < shapes; i++) {
       const color = this.hexToInt(colors[i % colors.length]);
       
       if (Math.random() > 0.5) {
         // Rectangle
-        const x = Math.floor(Math.random() * size * 0.7);
-        const y = Math.floor(Math.random() * size * 0.7);
-        const w = Math.floor(Math.random() * size * 0.3 + size * 0.1);
-        const h = Math.floor(Math.random() * size * 0.3 + size * 0.1);
+        const x = Math.floor(Math.random() * width * 0.7);
+        const y = Math.floor(Math.random() * height * 0.7);
+        const w = Math.floor(Math.random() * width * 0.3 + width * 0.1);
+        const h = Math.floor(Math.random() * height * 0.3 + height * 0.1);
         
-        for (let dx = 0; dx < w && x + dx < size; dx++) {
-          for (let dy = 0; dy < h && y + dy < size; dy++) {
+        for (let dx = 0; dx < w && x + dx < width; dx++) {
+          for (let dy = 0; dy < h && y + dy < height; dy++) {
             image.setPixelColor(color, x + dx, y + dy);
           }
         }
       } else {
         // Circle
-        const centerX = Math.random() * size;
-        const centerY = Math.random() * size;
-        const radius = Math.random() * size * 0.2 + size * 0.05;
+        const centerX = Math.random() * width;
+        const centerY = Math.random() * height;
+        const radius = Math.random() * Math.min(width, height) * 0.2 + Math.min(width, height) * 0.05;
         
-        for (let x = 0; x < size; x++) {
-          for (let y = 0; y < size; y++) {
+        for (let x = 0; x < width; x++) {
+          for (let y = 0; y < height; y++) {
             const distance = Math.sqrt((x - centerX) ** 2 + (y - centerY) ** 2);
             if (distance < radius) {
               image.setPixelColor(color, x, y);
@@ -262,23 +278,23 @@ class TextureGenerator {
     }
   }
 
-  drawRandomPattern(image, colors, size, roughness) {
+  drawRandomPattern(image, colors, width, height, roughness) {
     // Random pixel-like pattern
-    const numPixels = Math.floor(size * size * roughness);
+    const numPixels = Math.floor(width * height * roughness);
     
     for (let i = 0; i < numPixels; i++) {
-      const x = Math.floor(Math.random() * size);
-      const y = Math.floor(Math.random() * size);
+      const x = Math.floor(Math.random() * width);
+      const y = Math.floor(Math.random() * height);
       const color = this.hexToInt(colors[Math.floor(Math.random() * colors.length)]);
       
       image.setPixelColor(color, x, y);
     }
   }
 
-  adjustContrast(image, size, contrast) {
+  adjustContrast(image, width, height, contrast) {
     const factor = (259 * (contrast * 255 + 255)) / (255 * (259 - contrast * 255));
     
-    image.scan(0, 0, size, size, function (x, y, idx) {
+    image.scan(0, 0, width, height, function (x, y, idx) {
       this.bitmap.data[idx] = Math.min(255, Math.max(0, factor * (this.bitmap.data[idx] - 128) + 128));
       this.bitmap.data[idx + 1] = Math.min(255, Math.max(0, factor * (this.bitmap.data[idx + 1] - 128) + 128));
       this.bitmap.data[idx + 2] = Math.min(255, Math.max(0, factor * (this.bitmap.data[idx + 2] - 128) + 128));
@@ -286,20 +302,27 @@ class TextureGenerator {
   }
 
   hexToInt(hex) {
-    return parseInt(hex.replace('#', ''), 16) << 8 | 0xFF;
+    // Remove # if present and convert to RGB
+    const cleanHex = hex.replace('#', '');
+    const r = parseInt(cleanHex.substr(0, 2), 16) || 0;
+    const g = parseInt(cleanHex.substr(2, 2), 16) || 0;
+    const b = parseInt(cleanHex.substr(4, 2), 16) || 0;
+    
+    // Use JIMP's built-in method for color conversion
+    return Jimp.rgbaToInt(r, g, b, 255);
   }
 
-  generateFallbackTexture(size) {
-    const image = new Jimp(size, size, 0x000000FF);
+  generateFallbackTexture(width, height) {
+    const image = new Jimp(width, height, 0x000000FF);
     
     // Simple checkerboard pattern as fallback
-    const tileSize = Math.max(1, Math.floor(size / 8));
-    for (let x = 0; x < size; x += tileSize) {
-      for (let y = 0; y < size; y += tileSize) {
+    const tileSize = Math.max(1, Math.floor(Math.min(width, height) / 8));
+    for (let x = 0; x < width; x += tileSize) {
+      for (let y = 0; y < height; y += tileSize) {
         const color = ((Math.floor(x / tileSize)) + (Math.floor(y / tileSize))) % 2 ? 0x333333FF : 0x666666FF;
         
-        for (let dx = 0; dx < tileSize && x + dx < size; dx++) {
-          for (let dy = 0; dy < tileSize && y + dy < size; dy++) {
+        for (let dx = 0; dx < tileSize && x + dx < width; dx++) {
+          for (let dy = 0; dy < tileSize && y + dy < height; dy++) {
             image.setPixelColor(color, x + dx, y + dy);
           }
         }
@@ -320,21 +343,24 @@ app.get('/health', (req, res) => {
 
 app.post('/api/generate-textures', async (req, res) => {
   try {
-    const { prompt, size = 32, filename = 'texture' } = req.body;
+    const { prompt, width = 32, height = 32 } = req.body;
 
     if (!prompt) {
       return res.status(400).json({ error: 'Prompt is required' });
     }
 
-    console.log(`Generating textures for prompt: "${prompt}", size: ${size}x${size}`);
+    const textureWidth = parseInt(width) || 32;
+    const textureHeight = parseInt(height) || 32;
+
+    console.log(`Generating textures for prompt: "${prompt}", size: ${textureWidth}x${textureHeight}`);
 
     // Generate 4 texture variations
     const textures = [];
     for (let i = 0; i < 4; i++) {
-      const textureBuffer = await textureGenerator.generateTexture(prompt, parseInt(size));
+      const textureBuffer = await textureGenerator.generateTexture(prompt, textureWidth, textureHeight);
       
       // Save texture to public directory
-      const textureFilename = `${filename}_${i + 1}_${Date.now()}.png`;
+      const textureFilename = `texture_${i + 1}_${Date.now()}.png`;
       const texturePath = path.join(publicDir, textureFilename);
       
       fs.writeFileSync(texturePath, textureBuffer);
@@ -351,7 +377,8 @@ app.post('/api/generate-textures', async (req, res) => {
       success: true,
       textures,
       prompt,
-      size: parseInt(size),
+      width: textureWidth,
+      height: textureHeight,
       generated_at: new Date().toISOString()
     });
 

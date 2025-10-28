@@ -6,7 +6,7 @@ A full-stack web application that generates unique textures using AI. The applic
 
 - 🎨 **AI-Powered Generation**: Uses Ollama (with llama3.2 by default) to analyze texture prompts
 - 🖼️ **Multiple Variations**: Generates 4 unique texture samples per request
-- 📏 **Customizable Size**: Support for various texture sizes (16x16 to 512x512)
+- 📏 **Custom Dimensions**: Support for custom width and height (8x8 to 1024x1024)
 - 💾 **Easy Download**: One-click download of generated textures
 - 🎯 **Smart Fallback**: Works even without Ollama using built-in pattern generation
 - 🌐 **Web Interface**: Clean, responsive React UI
@@ -47,35 +47,31 @@ Clone and install dependencies:
 git clone <repository-url>
 cd texture-generator
 
-# Install backend dependencies
-cd backend
-npm install
+# Windows
+.\setup.bat
 
-# Install frontend dependencies  
-cd ../frontend
-npm install
+# Unix/Linux/macOS
+chmod +x setup.sh
+./setup.sh
 ```
 
 ### 3. Run the Application
 
-#### Option A: Manual Start
-
-**Start Backend:**
+#### Windows
 ```bash
-cd backend
+.\start-dev.bat
+```
+
+#### Unix/Linux/macOS
+```bash
+chmod +x start-dev.sh
+./start-dev.sh
+```
+
+#### Manual Start
+```bash
+# Root directory
 npm run dev
-```
-
-**Start Frontend:**
-```bash
-cd frontend
-npm start
-```
-
-#### Option B: Docker (Full Stack)
-
-```bash
-docker-compose up -d
 ```
 
 ### 4. Access the Application
@@ -88,13 +84,11 @@ docker-compose up -d
 
 1. **Enter a Texture Description**: Describe the texture you want (e.g., "rough stone wall", "wooden planks", "rusty metal")
 
-2. **Select Size**: Choose from 16x16 to 512x512 pixels
+2. **Set Dimensions**: Enter custom width and height (8-1024 pixels)
 
-3. **Set Filename**: Choose a base filename for your textures
+3. **Generate**: Click "Generate 4 Textures" to create variations
 
-4. **Generate**: Click "Generate 4 Textures" to create variations
-
-5. **Download**: Click on any generated texture to download it
+4. **Download**: Click on any generated texture to download it
 
 ## API Endpoints
 
@@ -105,8 +99,8 @@ Generate texture variations based on a prompt.
 ```json
 {
   "prompt": "rough stone wall",
-  "size": 64,
-  "filename": "stone_texture"
+  "width": 64,
+  "height": 64
 }
 ```
 
@@ -117,13 +111,14 @@ Generate texture variations based on a prompt.
   "textures": [
     {
       "id": 1,
-      "filename": "stone_texture_1_1635789123456.png",
-      "url": "/texture-generator/backend/public/stone_texture_1_1635789123456.png",
-      "downloadUrl": "/api/download/stone_texture_1_1635789123456.png"
+      "filename": "texture_1_1635789123456.png",
+      "url": "/texture-generator/backend/public/texture_1_1635789123456.png",
+      "downloadUrl": "/api/download/texture_1_1635789123456.png"
     }
   ],
   "prompt": "rough stone wall",
-  "size": 64,
+  "width": 64,
+  "height": 64,
   "generated_at": "2023-11-01T12:00:00.000Z"
 }
 ```
@@ -173,7 +168,8 @@ texture-generator/
 │   │   ├── index.js      # React entry point
 │   │   └── index.css     # Styles
 │   └── package.json      # Frontend dependencies
-├── docker-compose.yml    # Full stack Docker setup
+├── setup.bat/.sh         # Setup scripts
+├── start-dev.bat/.sh     # Development start scripts
 └── README.md            # This file
 ```
 
@@ -189,33 +185,6 @@ The frontend uses vanilla CSS with a modern design. Key files:
 - `src/App.js` - Main component logic
 - `src/index.css` - All styles and responsive design
 
-## Deployment
-
-### Production Build
-
-**Frontend:**
-```bash
-cd frontend
-npm run build
-```
-
-**Backend:**
-```bash
-cd backend
-npm start
-```
-
-### Docker Deployment
-
-```bash
-docker-compose up -d --build
-```
-
-This will start:
-- Ollama service on port 11434
-- Backend API on port 3001  
-- Frontend on port 3000
-
 ## Troubleshooting
 
 ### Ollama Connection Issues
@@ -223,12 +192,14 @@ This will start:
 1. Ensure Ollama is running: `ollama list`
 2. Check the model is available: `ollama pull llama3.2`
 3. Verify the URL in backend/.env
+4. The app works without Ollama using built-in texture generation
 
 ### Texture Generation Fails
 
 1. Check backend logs for errors
-2. Verify canvas/sharp dependencies are installed
+2. Verify Jimp dependencies are installed
 3. Ensure sufficient disk space for texture storage
+4. Check color conversion in console logs
 
 ### Frontend Build Issues
 
@@ -247,6 +218,16 @@ This will start:
 ## License
 
 MIT License - see LICENSE file for details.
+
+## Changelog
+
+### Recent Updates
+- **Fixed**: Ollama connection handling with better error messages
+- **Fixed**: Color conversion issues in texture generation
+- **Changed**: Size input now uses separate width/height number fields
+- **Removed**: Filename input field (auto-generated names)
+- **Removed**: Docker dependencies (local development focus)
+- **Improved**: Enhanced logging for debugging connection issues
 
 ## Roadmap
 

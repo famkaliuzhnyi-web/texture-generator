@@ -4,8 +4,8 @@ import './index.css';
 
 function App() {
   const [prompt, setPrompt] = useState('');
-  const [size, setSize] = useState(32);
-  const [filename, setFilename] = useState('texture');
+  const [width, setWidth] = useState(32);
+  const [height, setHeight] = useState(32);
   const [textures, setTextures] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -39,8 +39,8 @@ function App() {
     try {
       const response = await axios.post('/api/generate-textures', {
         prompt: prompt.trim(),
-        size: parseInt(size),
-        filename: filename.trim() || 'texture'
+        width: parseInt(width),
+        height: parseInt(height)
       });
 
       if (response.data.success) {
@@ -75,8 +75,6 @@ function App() {
       setError('Failed to download texture');
     }
   };
-
-  const sizeOptions = [16, 32, 64, 128, 256, 512];
 
   return (
     <div className="app">
@@ -123,30 +121,30 @@ function App() {
 
           <div className="form-row">
             <div className="form-group">
-              <label htmlFor="size">Texture Size (pixels)</label>
-              <select
-                id="size"
-                value={size}
-                onChange={(e) => setSize(e.target.value)}
-              >
-                {sizeOptions.map(option => (
-                  <option key={option} value={option}>
-                    {option}x{option}
-                  </option>
-                ))}
-              </select>
+              <label htmlFor="width">Width (pixels)</label>
+              <input
+                type="number"
+                id="width"
+                value={width}
+                onChange={(e) => setWidth(e.target.value)}
+                min="8"
+                max="1024"
+                step="1"
+                placeholder="32"
+              />
             </div>
 
             <div className="form-group">
-              <label htmlFor="filename">Base Filename</label>
+              <label htmlFor="height">Height (pixels)</label>
               <input
-                type="text"
-                id="filename"
-                value={filename}
-                onChange={(e) => setFilename(e.target.value)}
-                placeholder="texture"
-                pattern="[a-zA-Z0-9_-]+"
-                title="Only letters, numbers, hyphens, and underscores allowed"
+                type="number"
+                id="height"
+                value={height}
+                onChange={(e) => setHeight(e.target.value)}
+                min="8"
+                max="1024"
+                step="1"
+                placeholder="32"
               />
             </div>
           </div>
